@@ -1,0 +1,15 @@
+"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { Shell } from "../../components/Shell";
+import { api, token } from "../../lib/api";
+import { useRouter } from "next/navigation";
+type Conversation = { _id: string; whatsappId: string; status: string; currentStep: string; updatedAt: string; customer?: { name?: string }; lastMessage?: { message: string; direction: string; createdAt: string } };
+type Result = { conversations: Conversation[]; pagination: { page: number; totalPages: number } };
+const statuses = ["", "BOT_ACTIVE", "HUMAN_REQUIRED", "COMPLETED", "CANCELLED"];
+export default function ConversationsPage() {
+  const router = useRouter(); const [data, setData] = useState<Result>(); const [search, setSearch] = useState(""); const [status, setStatus] = useState(""); const [error, setError] = useState("");
+  const load = (page = 1) => api<Result>(`/conversations?page=${page}&search=${encodeURIComponent(search)}&status=${status}`).then(setData).catch((e) => setError(e.message));
+  useEffect(() => { if (!token()) router.push("/login"); else load(); }, [router]);
+  return <Shell><h2>Conversations</h2><div className="filters"><input placeholder="Search customer or WhatsApp…" value={search} onChange={(e) => setSearch(e.target.value)} /><select value={status} onChange={(e) => setStatus(e.target.value)}>{statuses.map((value) => <option key={value} value={value}>{value || "All statuses"}</option>)}</select><button className="primary" onClick={() => load()}>Filter</button></div>{error ? <p className="error">{error}</p> : !data ? <p>Loading conversations…</p> : <><table><thead><tr><th>Customer</th><th>Last message</th><th>Status</th><th>Last updated</th><th /></tr></thead><tbody>{data.conversations.length ? data.conversations.map((conversation) => <tr key={conversation._id} className={conversation.status === "HUMAN_REQUIRED" ? "human-row" : ""}><td>{conversation.customer?.name || "Unnamed customer"}<div className="muted">{conversation.whatsappId}</div></td><td>{conversation.lastMessage ? <><span>{conversation.lastMessage.message.slice(0, 90)}</span><div className="muted">{conversation.lastMessage.direction} · {new Date(conversation.lastMessage.createdAt).toLocaleString()}</div></> : "No messages"}</td><td><span className={conversation.status === "HUMAN_REQUIRED" ? "handoff" : ""}>{conversation.status === "HUMAN_REQUIRED" ? "👤 HUMAN REQUIRED" : conversation.status}</span><div className="muted">{conversation.currentStep}</div></td><td>{new Date(conversation.updatedAt).toLocaleString()}</td><td><Link href={`/conversations/${conversation._id}`}>View</Link></td></tr>) : <tr><td colSpan={5}>No conversations found.</td></tr>}</tbody></table><p><button disabled={data.pagination.page <= 1} onClick={() => load(data.pagination.page - 1)}>Previous</button> Page {data.pagination.page} of {data.pagination.totalPages || 1} <button disabled={data.pagination.page >= data.pagination.totalPages} onClick={() => load(data.pagination.page + 1)}>Next</button></p></>}</Shell>;
+}
