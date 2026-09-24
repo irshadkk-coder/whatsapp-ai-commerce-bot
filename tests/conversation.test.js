@@ -176,3 +176,64 @@ test('numeric input during delivery does not accidentally select a product', asy
   assert.equal(h.data.conversation.pincode, '682001');
 });
 
+for (const state of ["AWAITING_DELIVERY_DETAILS", "AWAITING_EDIT_SELECTION", "AWAITING_EDIT_VALUE", "AWAITING_CONFIRMATION", "AWAITING_PAYMENT_METHOD"]) {
+  test(`'Cancel my order' cancels active flow during ${state}`, async () => {
+    const h = createHarness(); 
+    h.data.products = [product()]; 
+    h.data.conversation = deliveryConversation({ currentStep: state, editingField: state === "AWAITING_EDIT_VALUE" ? "NAME" : null });
+    await h.receive("Cancel my order");
+    assert.equal(h.data.conversation.currentStep, "IDLE"); 
+    assert.equal(h.data.conversation.status, "CANCELLED"); 
+    assert.equal(h.data.conversation.customerName, undefined); 
+    assert.match(h.data.replies.at(-1), /cancelled/i);
+  });
+}
+
+for (const msg of ["cancel order", "cancel my order", "Cancel my order!", "cancel my order.", "CANCEL MY ORDER"]) {
+  test(`cancellation variant '${msg}' cancels active delivery flow`, async () => {
+    const h = createHarness(); 
+    h.data.products = [product()]; 
+    h.data.conversation = detailsConversation({ currentStep: "AWAITING_DELIVERY_DETAILS", deliveryField: "NAME", quantity: 1 });
+    await h.receive(msg);
+    assert.equal(h.data.conversation.currentStep, "IDLE"); 
+    assert.equal(h.data.conversation.status, "CANCELLED"); 
+    assert.equal(h.data.conversation.customerName, undefined); 
+    assert.match(h.data.replies.at(-1), /cancelled/i);
+  });
+}
+
+test('legacy AWAITING_QUANTITY regression: does not hijack numeric product selection', async () => {
+  const h = createHarness(); 
+  h.data.products = [product({ name: 'A' }), product({ productId: 'B-2', name: 'B' })];
+  // Mock legacy state
+  h.data.conversation = detailsConversation({ currentStep: 'AWAITING_QUANTITY', selectedProductId: 'OLD-1' });
+  await h.receive('2');
+  
+  // Verification
+  assert.notEqual(h.data.conversation.quantity, 2);
+  assert.equal(h.data.conversation.currentStep, 'AWAITING_DELIVERY_DETAILS');
+  assert.equal(h.data.conversation.selectedProductId, 'B-2');
+  assert.equal(h.data.conversation.quantity, 1);
+});
+
+test('legacy AWAITING_QUANTITY does not block show products', async () => {
+  const h = createHarness();
+  h.data.products = [product()];
+  h.data.conversation = detailsConversation({ currentStep: 'AWAITING_QUANTITY', selectedProductId: 'OLD-1' });
+  await h.receive('show products');
+  
+  assert.equal(h.data.conversation.currentStep, 'IDLE');
+  assert.equal(h.data.conversation.status, 'BOT_ACTIVE');
+  assert.match(h.data.replies.at(-1), /Plate Organizer/);
+});
+
+test('legacy AWAITING_QUANTITY does not block normal new product request', async () => {
+  const h = createHarness();
+  h.data.products = [product()];
+  h.data.conversation = detailsConversation({ currentStep: 'AWAITING_QUANTITY', selectedProductId: 'OLD-1' });
+  await h.receive('order Plate Organizer');
+  
+  assert.equal(h.data.conversation.currentStep, 'AWAITING_DELIVERY_DETAILS');
+  assert.equal(h.data.conversation.selectedProductId, 'P-1');
+  assert.equal(h.data.conversation.quantity, 1);
+});

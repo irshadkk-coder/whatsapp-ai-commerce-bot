@@ -150,14 +150,17 @@ const isCodPaymentRequest = (text) => /\b(want\s+cod|cash\s+on\s+delivery|pay\s+
 const isPaymentStatusQuestion = (text) => /\b(payment\s*status|did\s+(?:my\s+)?payment\s+(?:go\s+through|succeed)|is\s+(?:my\s+)?payment\s+successful|payment\s+pending)\b/i.test(text);
 const isPaymentRetryRequest = (text) => /\b(repay|pay\s+again|retry\s+payment|need\s+to\s+repay|payment\s+failed|try\s+(?:the\s+)?payment\s+again)\b/i.test(text);
 function normalizedIntent(text) { return String(text).trim().toLowerCase().replace(/\u2019/g, "'").replace(/[.!?,]+$/, ""); }
+const isTrackingRequest = (text) => /^(?:track(?:\s+(?:my\s+)?)?order|where\s+is\s+my\s+order|order\s+status|my\s+orders?|track\s+my\s+package|where\s+is\s+my\s+package|delivery\s+status|track)$/i.test(normalizedIntent(text));
+const isOrderCancellationRequest = (text) => /\b(cancel(?:\s+my)?\s+order|i\s+want\s+to\s+cancel|cancel\s+order)\b/i.test(text);
+
 function isFlowCancellationIntent(text) {
+  if (isOrderCancellationRequest(text)) return true;
   return new Set(["cancel", "cancel order", "cancel this", "i don't want this", "i dont want this", "i don't want this product", "i dont want this product", "stop", "forget it", "never mind"]).has(normalizedIntent(text));
 }
+
 function isProductChangeIntent(text) {
   return new Set(["i want another product", "need another product", "need other product", "i want other product", "change product", "different product", "show other products", "show products", "choose another product", "i want a different product", "another item", "different item"]).has(normalizedIntent(text));
 }
-const isTrackingRequest = (text) => /^(?:track(?:\s+(?:my\s+)?)?order|where\s+is\s+my\s+order|order\s+status|my\s+orders?|track\s+my\s+package|where\s+is\s+my\s+package|delivery\s+status|track)$/i.test(normalizedIntent(text));
-const isOrderCancellationRequest = (text) => /\b(cancel(?:\s+my)?\s+order|i\s+want\s+to\s+cancel|cancel\s+order)\b/i.test(text);
 function isViewedProductOrderIntent(text) {
   const message = String(text).trim().replace(/[.!?]+$/, "");
   return isYes(message) || /^(?:ok|okay|i\s+want\s+(?:it|this|this\s+product)|i\s+need\s+(?:this\s+product|order\s+this\s+product)|i\s+want\s+to\s+(?:order\s+this|buy\s+this\s+item)|order\s+(?:it|this))$/i.test(message);
@@ -416,7 +419,21 @@ async function handleStep({ customer, conversation, text }) {
   }
   const requestedProduct = isNewOrder(text) ? await findRelevantProduct(text) : null;
   if (requestedProduct && conversation.currentStep !== "AWAITING_PAYMENT_VERIFICATION") { await begin({ customer, conversation, product: requestedProduct, quantity: extractQuantity(text) || 1 }); return true; }
-  if (conversation.currentStep === "AWAITING_QUANTITY") { conversation.quantity = /^\s*[1-9]\d*\s*$/.test(text) ? Number(text.trim()) : 1; conversation.currentStep = "AWAITING_DELIVERY_DETAILS"; conversation.deliveryField = "NAME"; await conversation.save(); await reply(customer, deliveryForm()); return true; }
+  if (conversation.currentStep === "AWAITING_QUANTITY") { 
+    // AWAITING_QUANTITY is a legacy state; fresh catalog/product intents must not be consumed as quantity when the legacy state is stale.
+    const numericMatch = text.trim().match(/^(\d+)$/);
+    if (numericMatch) {
+      const position = parseInt(numericMatch[1], 10);
+      const available = await getAvailableProducts();
+      if (position > 0 && position <= available.length) return false;
+    }
+    conversation.quantity = /^\s*[1-9]\d*\s*$/.test(text) ? Number(text.trim()) : 1; 
+    conversation.currentStep = "AWAITING_DELIVERY_DETAILS"; 
+    conversation.deliveryField = "NAME"; 
+    await conversation.save(); 
+    await reply(customer, deliveryForm()); 
+    return true; 
+  }
   if (conversation.currentStep === "AWAITING_NAME") { conversation.currentStep = "AWAITING_DELIVERY_DETAILS"; conversation.deliveryField = "NAME"; return handleDelivery({ customer, conversation, text }); }
   if (["AWAITING_ADDRESS", "AWAITING_LANDMARK", "AWAITING_PINCODE"].includes(conversation.currentStep)) { const legacyStep = conversation.currentStep; conversation.currentStep = "AWAITING_DELIVERY_DETAILS"; conversation.deliveryField = legacyStep === "AWAITING_PINCODE" ? "PINCODE" : "HOUSE_BUILDING"; return handleDelivery({ customer, conversation, text }); }
   if (["AWAITING_ADDRESS", "AWAITING_LANDMARK", "AWAITING_PINCODE", "AWAITING_DELIVERY_DETAILS"].includes(conversation.currentStep)) return handleDelivery({ customer, conversation, text });
