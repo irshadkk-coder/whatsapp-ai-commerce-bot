@@ -147,10 +147,13 @@ const isNewOrder = (text) => /\b(order|buy|purchase|need|want)\b/i.test(text);
 const isGreeting = (text) => /^(hi+|hello+|hey+|hii+)$/i.test(text.trim());
 const isOnlinePaymentRequest = (text) => /\b(pay\s+online|online\s+payment|change\s+to\s+online\s+payment|want\s+to\s+pay\s+now|pay\s+by\s+upi)\b/i.test(text);
 const isCodPaymentRequest = (text) => /\b(want\s+cod|cash\s+on\s+delivery|pay\s+cod)\b/i.test(text);
-const isPaymentStatusQuestion = (text) => /\b(payment\s*status|did\s+(?:my\s+)?payment\s+(?:go\s+through|succeed)|is\s+(?:my\s+)?payment\s+successful|payment\s+pending)\b/i.test(text);
 const isPaymentRetryRequest = (text) => /\b(repay|pay\s+again|retry\s+payment|need\s+to\s+repay|payment\s+failed|try\s+(?:the\s+)?payment\s+again)\b/i.test(text);
 function normalizedIntent(text) { return String(text).trim().toLowerCase().replace(/\u2019/g, "'").replace(/[.!?,]+$/, ""); }
-const isTrackingRequest = (text) => /^(?:track(?:\s+(?:my\s+)?)?order|where\s+is\s+my\s+order|order\s+status|my\s+orders?|track\s+my\s+package|where\s+is\s+my\s+package|delivery\s+status|track)$/i.test(normalizedIntent(text));
+const isPaymentStatusQuestion = (text) => {
+  const norm = normalizedIntent(text);
+  return /\b(payment\s*status|did\s+(?:my\s+)?payment\s+(?:go\s+through|succeed)|is\s+(?:my\s+)?payment\s+successful|payment\s+pending|payment\s+successful|payment\s+success|payment\s+done|i\s+paid|i\s+have\s+paid|payment\s+completed|check\s+payment|check\s+my\s+payment)\b/i.test(norm) || norm === "paid";
+};
+const isTrackingRequest = (text) => /\b(track(?:\s+(?:my\s+)?)?order|where\s+is\s+my\s+order|order\s+status|my\s+orders?|track\s+my\s+package|where\s+is\s+my\s+package|delivery\s+status|track|order\s+confirmed\??|is\s+my\s+order\s+confirmed\??|what'?s\s+my\s+order\s+status|check\s+my\s+order|check\s+order)\b/i.test(normalizedIntent(text));
 const isOrderCancellationRequest = (text) => /\b(cancel(?:\s+my)?\s+order|i\s+want\s+to\s+cancel|cancel\s+order)\b/i.test(text);
 
 function isFlowCancellationIntent(text) {
@@ -196,6 +199,37 @@ async function handleTracking(customer, text) {
   if (result.length > 1) { await reply(customer, recentOrdersText(result)); return true; }
   await reply(customer, trackingText(result[0])); return true;
 }
+
+async function sendPaymentStatusReply(customer, order) {
+  if (order.paymentStatus === "PAID") {
+    await reply(customer, `✅ Payment Successful!\n\nYour order #${order.orderId} is confirmed.\n\nProduct: ${order.productName}\nQuantity: ${order.quantity}\nTotal: Rs.${order.totalAmount}/-\n\nThank you!`);
+  } else if (order.paymentStatus === "PENDING") {
+    await reply(customer, "⏳ Your payment has not yet been verified. Razorpay confirmation is still pending. If you just paid, please wait a moment for the status to update automatically.");
+  } else if (order.paymentStatus === "FAILED") {
+    await reply(customer, "❌ Your payment attempt failed. You can try the payment link again or ask to change to Cash on Delivery.");
+  } else if (order.paymentStatus === "COD") {
+    await reply(customer, `Your order #${order.orderId} is Cash on Delivery. No online payment is required.`);
+  }
+  return true;
+}
+
+async function handlePaymentStatusQuestion(customer, text) {
+  const requestedOrderId = orderIdFromText(text);
+  const result = await customerOrders(customer._id, requestedOrderId);
+  
+  if (requestedOrderId) {
+    if (!result) { await reply(customer, "Sorry, I couldn't find that order in your account."); return true; }
+    return sendPaymentStatusReply(customer, result);
+  }
+  
+  if (!result.length) { await reply(customer, "I couldn't find any recent orders for you. Please check if you have an active order."); return true; }
+  if (result.length > 1) { 
+    await reply(customer, `📦 Your recent orders:\n\n${result.map((order, index) => `${index + 1}️⃣ #${order.orderId} — ${order.productName}\n   Payment: ${order.paymentStatus}`).join("\n\n")}\n\nReply with the order number you want to check the payment status for.`); 
+    return true; 
+  }
+  return sendPaymentStatusReply(customer, result[0]);
+}
+
 async function handleOrderCancellation(customer, text) {
   const requestedOrderId = orderIdFromText(text);
   const result = await customerOrders(customer._id, requestedOrderId);
@@ -293,6 +327,7 @@ async function handlePriorityIntent({ customer, conversation, text }) {
     clearActive(conversation); conversation.status = "BOT_ACTIVE"; conversation.currentStep = "IDLE"; await conversation.save();
     return handleCatalog(customer);
   }
+  if (isPaymentStatusQuestion(text)) return handlePaymentStatusQuestion(customer, text);
   if (isTrackingRequest(text)) return handleTracking(customer, text);
   return false;
 }
@@ -438,10 +473,7 @@ async function handleStep({ customer, conversation, text }) {
   if (["AWAITING_ADDRESS", "AWAITING_LANDMARK", "AWAITING_PINCODE"].includes(conversation.currentStep)) { const legacyStep = conversation.currentStep; conversation.currentStep = "AWAITING_DELIVERY_DETAILS"; conversation.deliveryField = legacyStep === "AWAITING_PINCODE" ? "PINCODE" : "HOUSE_BUILDING"; return handleDelivery({ customer, conversation, text }); }
   if (["AWAITING_ADDRESS", "AWAITING_LANDMARK", "AWAITING_PINCODE", "AWAITING_DELIVERY_DETAILS"].includes(conversation.currentStep)) return handleDelivery({ customer, conversation, text });
   if (conversation.currentStep === "AWAITING_PAYMENT_VERIFICATION") {
-    if (isPaymentStatusQuestion(text)) {
-      await reply(customer, "Your payment is still being verified. Your order will be confirmed automatically after Razorpay sends verified payment confirmation.");
-      return true;
-    }
+    // Payment status is handled by handlePriorityIntent
     if (!isPaymentRetryRequest(text)) return false;
     const order = conversation.pendingOrderId ? await Order.findById(conversation.pendingOrderId) : null;
     if (!order) { await reply(customer, "I could not find the pending payment request. Please contact support for help with this order."); return true; }
@@ -594,6 +626,7 @@ app.post("/webhook", async (req, res) => {
     let conversation = await Conversation.findOne({ whatsappId: from, status: { $in: ["BOT_ACTIVE", "HUMAN_REQUIRED"] } }).sort({ updatedAt: -1 });
     if (conversation?.status === "HUMAN_REQUIRED") return res.sendStatus(200);
     if (!conversation && (isOrderCancellationRequest(userMessage) || isCancel(userMessage))) { await handleOrderCancellation(customer, userMessage); return res.sendStatus(200); }
+    if (!conversation && isPaymentStatusQuestion(userMessage)) { await handlePaymentStatusQuestion(customer, userMessage); return res.sendStatus(200); }
     if (!conversation && (isTrackingRequest(userMessage) || orderIdFromText(userMessage))) { await handleTracking(customer, userMessage); return res.sendStatus(200); }
     if (conversation && await handleStep({ customer, conversation, text: userMessage })) return res.sendStatus(200);
     if (isOnlinePaymentRequest(userMessage)) { await sendCodOnlinePaymentLink(customer); return res.sendStatus(200); }

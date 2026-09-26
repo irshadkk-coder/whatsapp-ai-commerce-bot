@@ -10,7 +10,7 @@ function document(values) {
 }
 
 function createHarness() {
-  const data = { products: [], conversation: null, customer: document({ _id: "customer-1", whatsappId: "919999999999" }), replies: [], messages: new Set(), productLookups: 0, geminiCalls: 0, orders: [] };
+  const data = { products: [], conversation: null, customer: document({ _id: "customer-1", whatsappId: "919999999999" }), replies: [], messages: new Set(), productLookups: 0, geminiCalls: 0, orders: [], mockCustomerOrders: [] };
   const routes = [];
   const app = { disable() {}, use() {}, get() {}, post(pathname, handler) { routes.push({ pathname, handler }); }, listen() { return { close(done) { done(); } }; } };
   const express = () => app;
@@ -60,7 +60,7 @@ function createHarness() {
       "./src/services/whatsappService": { sendWhatsAppText: async ({ text }) => { data.replies.push(text); } },
       "./src/services/geminiService": { getGeminiReply: async () => { data.geminiCalls += 1; return "gemini fallback"; } },
       "./src/services/orderService": { createOrder: async (input) => { const order = document({ _id: `order-${data.orders.length + 1}`, ...input, totalAmount: input.product.price * input.conversation.quantity }); data.orders.push(order); return order; } },
-      "./src/services/orderLifecycleService": { canCancelOrder: () => true, customerOrders: async () => [], trackingText: () => "tracking" },
+      "./src/services/orderLifecycleService": { canCancelOrder: () => true, customerOrders: async () => data.mockCustomerOrders, trackingText: (o) => `tracking ${o.orderId}` },
       "./src/services/paymentService": { createPaymentLink: async () => ({ id: "link", short_url: "https://payment.test", reference_id: "ref" }), fetchPaymentLink: async () => ({ status: "created" }), verifyWebhookSignature: () => true },
       "./src/utils/productService": productService,
       "./src/routes/adminRoutes": {},
