@@ -4,12 +4,189 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Shell } from "../../../components/Shell";
 import { api, token } from "../../../lib/api";
-type Message = { _id: string; direction: "INCOMING" | "OUTGOING"; message: string; messageType: string; createdAt: string };
-type Data = { conversation: { status: string; currentStep: string; deliveryField?: string; editingField?: string; selectedProductName?: string; quantity?: number; paymentMethod?: string; createdAt: string; updatedAt: string }; customer: { id: string; name?: string; whatsappId: string; phone?: string } | null; messages: Message[]; order?: { _id: string; orderId: string; productName: string; totalAmount: number; paymentMethod: string; paymentStatus: string; orderStatus: string } | null };
+type Message = {
+  _id: string;
+  direction: "INCOMING" | "OUTGOING";
+  message: string;
+  messageType: string;
+  createdAt: string;
+};
+type Data = {
+  conversation: {
+    status: string;
+    currentStep: string;
+    deliveryField?: string;
+    editingField?: string;
+    selectedProductName?: string;
+    quantity?: number;
+    paymentMethod?: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  customer: {
+    id: string;
+    name?: string;
+    whatsappId: string;
+    phone?: string;
+  } | null;
+  messages: Message[];
+  order?: {
+    _id: string;
+    orderId: string;
+    productName: string;
+    totalAmount: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    orderStatus: string;
+  } | null;
+};
 export default function ConversationDetailPage() {
-  const { id } = useParams<{ id: string }>(); const router = useRouter(); const [data, setData] = useState<Data>(); const [status, setStatus] = useState(""); const [message, setMessage] = useState(""); const [saving, setSaving] = useState(false);
-  const load = () => api<Data>(`/conversations/${id}`).then((result) => { setData(result); setStatus(result.conversation.status); }).catch((e) => setMessage(e.message));
-  useEffect(() => { if (!token()) router.push("/login"); else load(); }, [id, router]);
-  async function updateStatus() { setSaving(true); setMessage(""); try { const result = await api<{ conversation: { status: string } }>(`/conversations/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); setData((current) => current ? { ...current, conversation: { ...current.conversation, status: result.conversation.status } } : current); setMessage("Conversation status updated. No WhatsApp message was sent."); } catch (e: any) { setMessage(e.message); } finally { setSaving(false); } }
-  return <Shell>{!data ? <p className={message ? "error" : ""}>{message || "Loading conversation…"}</p> : <><div className="page-title"><div><h2>{data.customer?.name || "Customer conversation"}</h2><p className="muted">WhatsApp: {data.customer?.whatsappId || data.conversation.selectedProductName || "Unknown"}</p></div>{data.customer && <Link href={`/customers/${data.customer.id}`}>View customer</Link>}</div><section className="grid"><div className="card"><h3>Status</h3><p className={data.conversation.status === "HUMAN_REQUIRED" ? "handoff" : ""}>{data.conversation.status === "HUMAN_REQUIRED" ? "👤 HUMAN REQUIRED" : data.conversation.status}</p><p className="muted">Current step: {data.conversation.currentStep}</p></div><div className="card"><h3>Conversation management</h3><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="BOT_ACTIVE">BOT_ACTIVE</option><option value="HUMAN_REQUIRED">HUMAN_REQUIRED</option></select> <button className="primary" disabled={saving || status === data.conversation.status} onClick={updateStatus}>Save status</button><p className="muted">Changing status does not send a WhatsApp message.</p></div>{data.order && <div className="card"><h3>Pending order</h3><Link href={`/orders/${data.order._id}`}>{data.order.orderId}</Link><p>{data.order.productName} · ₹{data.order.totalAmount}</p><p>{data.order.paymentMethod} / {data.order.paymentStatus} · {data.order.orderStatus}</p></div>}</section>{message && <p className={message.includes("updated") ? "success" : "error"}>{message}</p>}<h3>Messages</h3><section className="message-timeline">{data.messages.length ? data.messages.map((item) => <article key={item._id} className={`message ${item.direction === "INCOMING" ? "incoming" : "outgoing"}`}><strong>{item.direction === "INCOMING" ? "CUSTOMER" : "BOT"}</strong><p>{item.message}</p><time>{new Date(item.createdAt).toLocaleString()} · {item.messageType}</time></article>) : <p className="muted">No saved messages for this customer.</p>}</section></>}</Shell>;
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [data, setData] = useState<Data>();
+  const [status, setStatus] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const load = () =>
+    api<Data>(`/conversations/${id}`)
+      .then((result) => {
+        setData(result);
+        setStatus(result.conversation.status);
+      })
+      .catch((e) => setMessage(e.message));
+  useEffect(() => {
+    if (!token()) router.push("/login");
+    else load();
+  }, [id, router]);
+  async function updateStatus() {
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await api<{ conversation: { status: string } }>(
+        `/conversations/${id}/status`,
+        { method: "PATCH", body: JSON.stringify({ status }) },
+      );
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              conversation: {
+                ...current.conversation,
+                status: result.conversation.status,
+              },
+            }
+          : current,
+      );
+      setMessage("Conversation status updated. No WhatsApp message was sent.");
+    } catch (e: any) {
+      setMessage(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Shell>
+      {!data ? (
+        <p className={message ? "error" : ""}>
+          {message || "Loading conversation…"}
+        </p>
+      ) : (
+        <>
+          <div className="page-title">
+            <div>
+              <h2>{data.customer?.name || "Customer conversation"}</h2>
+              <p className="muted">
+                WhatsApp:{" "}
+                {data.customer?.whatsappId ||
+                  data.conversation.selectedProductName ||
+                  "Unknown"}
+              </p>
+            </div>
+            {data.customer && (
+              <Link href={`/customers/${data.customer.id}`}>View customer</Link>
+            )}
+          </div>
+          <section className="grid">
+            <div className="card">
+              <h3>Status</h3>
+              <p
+                className={
+                  data.conversation.status === "HUMAN_REQUIRED" ? "handoff" : ""
+                }
+              >
+                {data.conversation.status === "HUMAN_REQUIRED"
+                  ? "👤 HUMAN REQUIRED"
+                  : data.conversation.status}
+              </p>
+              <p className="muted">
+                Current step: {data.conversation.currentStep}
+              </p>
+            </div>
+            <div className="card">
+              <h3>Conversation management</h3>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="BOT_ACTIVE">BOT_ACTIVE</option>
+                <option value="HUMAN_REQUIRED">HUMAN_REQUIRED</option>
+              </select>{" "}
+              <button
+                className="primary"
+                disabled={saving || status === data.conversation.status}
+                onClick={updateStatus}
+              >
+                Save status
+              </button>
+              <p className="muted">
+                Changing status does not send a WhatsApp message.
+              </p>
+            </div>
+            {data.order && (
+              <div className="card">
+                <h3>Pending order</h3>
+                <Link href={`/orders/${data.order._id}`}>
+                  {data.order.orderId}
+                </Link>
+                <p>
+                  {data.order.productName} · ₹{data.order.totalAmount}
+                </p>
+                <p>
+                  {data.order.paymentMethod} / {data.order.paymentStatus} ·{" "}
+                  {data.order.orderStatus}
+                </p>
+              </div>
+            )}
+          </section>
+          {message && (
+            <p className={message.includes("updated") ? "success" : "error"}>
+              {message}
+            </p>
+          )}
+          <h3>Messages</h3>
+          <section className="message-timeline">
+            {data.messages.length ? (
+              data.messages.map((item) => (
+                <article
+                  key={item._id}
+                  className={`message ${item.direction === "INCOMING" ? "incoming" : "outgoing"}`}
+                >
+                  <strong>
+                    {item.direction === "INCOMING" ? "CUSTOMER" : "BOT"}
+                  </strong>
+                  <p>{item.message}</p>
+                  <time>
+                    {new Date(item.createdAt).toLocaleString()} ·{" "}
+                    {item.messageType}
+                  </time>
+                </article>
+              ))
+            ) : (
+              <p className="muted">No saved messages for this customer.</p>
+            )}
+          </section>
+        </>
+      )}
+    </Shell>
+  );
 }
