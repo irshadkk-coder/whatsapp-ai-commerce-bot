@@ -4,6 +4,12 @@
 
 Production-style WhatsApp storefront automation backed by MongoDB, Gemini-assisted product responses, COD/Razorpay payment handling, and a protected Next.js administration dashboard.
 
+## Live Demo
+
+- **Admin Dashboard**: [https://whatsapp-ai-commerce-bot.vercel.app](https://whatsapp-ai-commerce-bot.vercel.app)
+- **Backend Health**: [https://whatsapp-ai-commerce-bot.onrender.com/health](https://whatsapp-ai-commerce-bot.onrender.com/health)
+- **GitHub**: [https://github.com/irshadkk-coder/whatsapp-ai-commerce-bot](https://github.com/irshadkk-coder/whatsapp-ai-commerce-bot)
+
 ## Key features
 
 - Persistent products, customers, conversations, messages, orders, and historical product snapshots
@@ -11,6 +17,40 @@ Production-style WhatsApp storefront automation backed by MongoDB, Gemini-assist
 - COD plus Razorpay Payment Links with signed webhook verification
 - Lifecycle-controlled shipping, delivery estimates, stored tracking details, and WhatsApp order tracking
 - Admin management for orders, products, customers, conversations, support, and analytics
+
+## Screenshots
+
+### Admin Dashboard
+![Admin Dashboard](screenshots/admin/dashboard.png)
+
+### Orders
+![Orders](screenshots/admin/orders.png)
+
+### Product Management
+![Product Management](screenshots/admin/products.png)
+
+### Analytics
+![Analytics](screenshots/admin/analytics.png)
+
+### Customers
+![Customers](screenshots/admin/customers.png)
+
+### Conversations
+![Conversations](screenshots/admin/conversations.png)
+
+## WhatsApp Ordering
+
+### 1. Product Catalogue
+![Product Catalogue](screenshots/whatsapp/01-Products.jpeg)
+
+### 2. Product Selection
+![Product Selection](screenshots/whatsapp/02-Product-selection.jpeg)
+
+### 3. Order Summary
+![Order Summary](screenshots/whatsapp/03-Order-summary.jpeg)
+
+### 4. Online Payment
+![Online Payment](screenshots/whatsapp/04-Payment.jpeg)
 
 ## Architecture, data model, and security
 
