@@ -21,6 +21,8 @@ export default function OrderDetail() {
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [shippingSaving, setShippingSaving] = useState(false);
+  const [shippingMessage, setShippingMessage] = useState("");
   const load = () =>
     api<any>(`/orders/${id}`)
       .then((result) => {
@@ -61,6 +63,26 @@ export default function OrderDetail() {
       setMessage(e.message);
     } finally {
       setSaving(false);
+    }
+  }
+  async function saveShipping() {
+    setShippingSaving(true);
+    setShippingMessage("");
+    try {
+      await api(`/orders/${id}/shipping`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          carrier,
+          trackingNumber,
+          estimatedDeliveryDate: estimatedDeliveryDate || null,
+        }),
+      });
+      setShippingMessage("Shipping details updated.");
+      load();
+    } catch (e: any) {
+      setShippingMessage(e.message);
+    } finally {
+      setShippingSaving(false);
     }
   }
   if (!order)
@@ -111,33 +133,72 @@ export default function OrderDetail() {
         </section>
       </div>
       <section className="card shipping-card">
-        <h3>Shipping Information</h3>
-        <p>Carrier: {order.carrier || "Not available"}</p>
-        <p>Tracking number: {order.trackingNumber || "Not available"}</p>
-        <p>
-          Shipped at:{" "}
-          {order.shippedAt
-            ? new Date(order.shippedAt).toLocaleString()
-            : "Not shipped"}
-        </p>
-        <p>
-          Estimated delivery:{" "}
-          {order.estimatedDeliveryDate
-            ? new Date(order.estimatedDeliveryDate).toLocaleDateString()
-            : "Not available"}
-        </p>
-        <p>
-          Delivered at:{" "}
-          {order.deliveredAt
-            ? new Date(order.deliveredAt).toLocaleString()
-            : "Not delivered"}
-        </p>
-        <p>
-          Cancellation:{" "}
-          {["PENDING", "CONFIRMED", "PROCESSING"].includes(order.orderStatus)
-            ? "Available"
-            : "Not available"}
-        </p>
+        <h3>Shipping &amp; Delivery</h3>
+        <div className="shipping-fields">
+          <label>
+            Estimated Delivery
+            <input
+              type="date"
+              value={estimatedDeliveryDate}
+              onChange={(e) => setEstimatedDeliveryDate(e.target.value)}
+            />
+          </label>
+          <label>
+            Carrier
+            <input
+              value={carrier}
+              maxLength={120}
+              onChange={(e) => setCarrier(e.target.value)}
+              placeholder="e.g. Delhivery"
+            />
+          </label>
+          <label>
+            Tracking Number
+            <input
+              value={trackingNumber}
+              maxLength={120}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              placeholder="e.g. XXXXXXXX"
+            />
+          </label>
+        </div>
+        <button
+          className="primary"
+          disabled={shippingSaving}
+          onClick={saveShipping}
+        >
+          {shippingSaving ? "Saving…" : "Save Shipping Details"}
+        </button>
+        {shippingMessage && (
+          <p
+            className={
+              shippingMessage.includes("updated") ? "success" : "error"
+            }
+            style={{ marginTop: 8 }}
+          >
+            {shippingMessage}
+          </p>
+        )}
+        <div style={{ marginTop: 14, color: "#667085", fontSize: 13 }}>
+          <p>
+            Shipped at:{" "}
+            {order.shippedAt
+              ? new Date(order.shippedAt).toLocaleString()
+              : "Not shipped"}
+          </p>
+          <p>
+            Delivered at:{" "}
+            {order.deliveredAt
+              ? new Date(order.deliveredAt).toLocaleString()
+              : "Not delivered"}
+          </p>
+          <p>
+            Cancellation:{" "}
+            {["PENDING", "CONFIRMED", "PROCESSING"].includes(order.orderStatus)
+              ? "Available"
+              : "Not available"}
+          </p>
+        </div>
       </section>
       <section className="card">
         <h3>Order lifecycle</h3>

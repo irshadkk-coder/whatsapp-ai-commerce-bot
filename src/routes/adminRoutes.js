@@ -370,4 +370,36 @@ router.patch("/orders/:id/status", async (req, res) => {
   } catch (error) { console.error("Order status update error:", error.message); return res.status(400).json({ success: false, message: "Unable to update order status" }); }
 });
 
+router.patch("/orders/:id/shipping", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    const update = {};
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "estimatedDeliveryDate")) {
+      if (req.body.estimatedDeliveryDate) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.estimatedDeliveryDate)) return res.status(400).json({ success: false, message: "Estimated delivery date must use YYYY-MM-DD" });
+        const date = new Date(`${req.body.estimatedDeliveryDate}T00:00:00.000Z`);
+        if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== req.body.estimatedDeliveryDate) return res.status(400).json({ success: false, message: "Invalid estimated delivery date" });
+        update.estimatedDeliveryDate = date;
+      } else {
+        update.estimatedDeliveryDate = null;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "carrier")) {
+      const carrier = String(req.body.carrier || "").trim();
+      if (carrier.length > 120) return res.status(400).json({ success: false, message: "Carrier must be 120 characters or fewer" });
+      update.carrier = carrier || undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "trackingNumber")) {
+      const trackingNumber = String(req.body.trackingNumber || "").trim();
+      if (trackingNumber.length > 120) return res.status(400).json({ success: false, message: "Tracking number must be 120 characters or fewer" });
+      update.trackingNumber = trackingNumber || undefined;
+    }
+    if (!Object.keys(update).length) return res.status(400).json({ success: false, message: "No shipping fields supplied" });
+    Object.assign(order, update);
+    await order.save();
+    return res.json({ success: true, order: safeOrder(order) });
+  } catch (error) { console.error("Order shipping update error:", error.message); return res.status(400).json({ success: false, message: "Unable to update shipping details" }); }
+});
+
 module.exports = router;

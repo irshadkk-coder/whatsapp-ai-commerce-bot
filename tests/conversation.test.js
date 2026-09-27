@@ -237,3 +237,107 @@ test('legacy AWAITING_QUANTITY does not block normal new product request', async
   assert.equal(h.data.conversation.selectedProductId, 'P-1');
   assert.equal(h.data.conversation.quantity, 1);
 });
+
+const deliveryDateQuestions = [
+  "When will I get my order?",
+  "When will my product arrive?",
+  "When can I expect delivery?",
+  "Delivery date?",
+  "How many days for delivery?",
+  "when will my order arrive",
+  "what is the delivery date",
+  "estimated delivery"
+];
+
+for (const question of deliveryDateQuestions) {
+  test(`delivery question '${question}' returns delivery estimate without Gemini`, async () => {
+    const h = createHarness();
+    h.data.mockCustomerOrders = [
+      { orderId: "ORD-20261001-A1B2", productName: "Plate Organizer", orderStatus: "CONFIRMED" }
+    ];
+    await h.receive(question);
+    assert.equal(h.data.geminiCalls, 0);
+    assert.match(h.data.replies.at(-1), /delivery ORD-20261001-A1B2/);
+  });
+}
+
+const trackingQuestions = [
+  "Track my order",
+  "Where is my order?",
+  "Order status",
+  "Check my order"
+];
+
+for (const question of trackingQuestions) {
+  test(`tracking question '${question}' returns tracking info without Gemini`, async () => {
+    const h = createHarness();
+    h.data.mockCustomerOrders = [
+      { orderId: "ORD-20261001-A1B2", productName: "Plate Organizer", orderStatus: "CONFIRMED" }
+    ];
+    await h.receive(question);
+    assert.equal(h.data.geminiCalls, 0);
+    assert.match(h.data.replies.at(-1), /tracking ORD-20261001-A1B2/);
+  });
+}
+
+test("delivery question during delivery field collection runs before field collection", async () => {
+  const h = createHarness();
+  h.data.products = [product()];
+  h.data.conversation = detailsConversation({
+    currentStep: "AWAITING_DELIVERY_DETAILS",
+    deliveryField: "NAME",
+    quantity: 1
+  });
+  h.data.mockCustomerOrders = [
+    { orderId: "ORD-20261001-A1B2", productName: "Plate Organizer", orderStatus: "CONFIRMED" }
+  ];
+
+  await h.receive("When will I get my order?");
+
+  // Should answer delivery question
+  assert.match(h.data.replies.at(-1), /delivery ORD-20261001-A1B2/);
+  // Must NOT treat the question as the customer's name
+  assert.equal(h.data.conversation.customerName, undefined);
+  assert.equal(h.data.conversation.currentStep, "AWAITING_DELIVERY_DETAILS");
+  assert.equal(h.data.geminiCalls, 0);
+});
+
+test("multiple orders for delivery question prompts user to select order number", async () => {
+  const h = createHarness();
+  h.data.mockCustomerOrders = [
+    { orderId: "ORD-1", productName: "Plate Organizer", orderStatus: "CONFIRMED" },
+    { orderId: "ORD-2", productName: "Smart Watch", orderStatus: "SHIPPED" }
+  ];
+
+  await h.receive("When will I get my order?");
+
+  assert.equal(h.data.geminiCalls, 0);
+  assert.match(h.data.replies.at(-1), /You have multiple orders/);
+  assert.match(h.data.replies.at(-1), /ORD-1/);
+  assert.match(h.data.replies.at(-1), /ORD-2/);
+  assert.match(h.data.replies.at(-1), /Please reply with the order number/);
+});
+
+test("delivery question with explicit order ID targets that specific order", async () => {
+  const h = createHarness();
+  h.data.mockCustomerOrders = [
+    { orderId: "ORD-20261001-1111", productName: "Plate Organizer", orderStatus: "CONFIRMED" },
+    { orderId: "ORD-20261001-2222", productName: "Smart Watch", orderStatus: "SHIPPED" }
+  ];
+
+  await h.receive("When will order ORD-20261001-2222 arrive?");
+
+  assert.equal(h.data.geminiCalls, 0);
+  assert.match(h.data.replies.at(-1), /delivery ORD-20261001-2222/);
+});
+
+test("delivery question when customer has no orders returns friendly message", async () => {
+  const h = createHarness();
+  h.data.mockCustomerOrders = [];
+
+  await h.receive("When can I expect delivery?");
+
+  assert.equal(h.data.geminiCalls, 0);
+  assert.match(h.data.replies.at(-1), /couldn't find any recent orders/);
+});
+

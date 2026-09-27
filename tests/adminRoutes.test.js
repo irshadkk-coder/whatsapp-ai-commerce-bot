@@ -29,6 +29,7 @@ test("Admin order status tests", async (t) => {
   });
 
   const patchHandler = adminRoutes.stack.find(l => l.route && l.route.path === '/orders/:id/status' && l.route.methods.patch).route.stack[0].handle;
+  const shippingHandler = adminRoutes.stack.find(l => l.route && l.route.path === '/orders/:id/shipping' && l.route.methods.patch).route.stack[0].handle;
 
   function createRes() {
     const res = { statusCode: 200, body: null };
@@ -148,4 +149,83 @@ test("Admin order status tests", async (t) => {
     assert.equal(res.statusCode, 200);
     assert.equal(savedOrder.orderStatus, "CANCELLED");
   });
+
+  await t.test("8. Admin can set shipping fields (carrier, trackingNumber, estimatedDeliveryDate)", async () => {
+    mockOrder.carrier = undefined;
+    mockOrder.trackingNumber = undefined;
+    mockOrder.estimatedDeliveryDate = undefined;
+    mockOrder.orderStatus = "CONFIRMED";
+    mockOrder.paymentStatus = "PAID";
+    savedOrder = null;
+
+    const req = {
+      params: { id: "order-1" },
+      body: { carrier: "Blue Dart", trackingNumber: "BD12345", estimatedDeliveryDate: "2026-10-15" }
+    };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(savedOrder.carrier, "Blue Dart");
+    assert.equal(savedOrder.trackingNumber, "BD12345");
+    assert.equal(savedOrder.estimatedDeliveryDate.toISOString().slice(0, 10), "2026-10-15");
+    assert.equal(savedOrder.orderStatus, "CONFIRMED", "orderStatus must not change");
+    assert.equal(savedOrder.paymentStatus, "PAID", "paymentStatus must not change");
+  });
+
+  await t.test("9. Admin can clear estimatedDeliveryDate", async () => {
+    mockOrder.estimatedDeliveryDate = new Date("2026-10-15T00:00:00.000Z");
+    savedOrder = null;
+
+    const req = { params: { id: "order-1" }, body: { estimatedDeliveryDate: "" } };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(savedOrder.estimatedDeliveryDate, null);
+  });
+
+  await t.test("10. Invalid estimatedDeliveryDate format is rejected", async () => {
+    savedOrder = null;
+    const req = { params: { id: "order-1" }, body: { estimatedDeliveryDate: "15-10-2026" } };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.success, false);
+    assert.equal(savedOrder, null);
+  });
+
+  await t.test("11. Carrier or trackingNumber exceeding 120 chars is rejected", async () => {
+    savedOrder = null;
+    const req = { params: { id: "order-1" }, body: { carrier: "a".repeat(121) } };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.success, false);
+    assert.equal(savedOrder, null);
+  });
+
+  await t.test("12. Empty shipping request with no fields returns 400", async () => {
+    savedOrder = null;
+    const req = { params: { id: "order-1" }, body: {} };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.success, false);
+    assert.equal(savedOrder, null);
+  });
+
+  await t.test("13. Shipping update for non-existent order returns 404", async () => {
+    const req = { params: { id: "non-existent" }, body: { carrier: "DHL" } };
+    const res = createRes();
+    await shippingHandler(req, res);
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body.success, false);
+  });
 });
+

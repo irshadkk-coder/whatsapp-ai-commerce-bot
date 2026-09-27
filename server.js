@@ -10,7 +10,7 @@ const Order = require("./src/models/Order");
 const { sendWhatsAppText } = require("./src/services/whatsappService");
 const { getGeminiReply } = require("./src/services/geminiService");
 const { createOrder } = require("./src/services/orderService");
-const { canCancelOrder, customerOrders, trackingText } = require("./src/services/orderLifecycleService");
+const { canCancelOrder, customerOrders, deliveryDateText, trackingText } = require("./src/services/orderLifecycleService");
 const { createPaymentLink, fetchPaymentLink, verifyWebhookSignature } = require("./src/services/paymentService");
 const { findRelevantProduct, findCategoryProducts, getAvailableProducts, getRequestedCategory, availableProductFilter } = require("./src/utils/productService");
 const adminRoutes = require("./src/routes/adminRoutes");
@@ -154,6 +154,10 @@ const isPaymentStatusQuestion = (text) => {
   return /\b(payment\s*status|did\s+(?:my\s+)?payment\s+(?:go\s+through|succeed)|is\s+(?:my\s+)?payment\s+successful|payment\s+pending|payment\s+successful|payment\s+success|payment\s+done|i\s+paid|i\s+have\s+paid|payment\s+completed|check\s+payment|check\s+my\s+payment)\b/i.test(norm) || norm === "paid";
 };
 const isTrackingRequest = (text) => /\b(track(?:\s+(?:my\s+)?)?order|where\s+is\s+my\s+order|order\s+status|my\s+orders?|track\s+my\s+package|where\s+is\s+my\s+package|delivery\s+status|track|order\s+confirmed\??|is\s+my\s+order\s+confirmed\??|what'?s\s+my\s+order\s+status|check\s+my\s+order|check\s+order)\b/i.test(normalizedIntent(text));
+const isDeliveryDateQuestion = (text) => {
+  const norm = normalizedIntent(text);
+  return /\b(when\s+will\s+(?:i\s+(?:get|receive)|.*?\s*(?:arrive|be\s+delivered|come))|when\s+can\s+i\s+expect\s+(?:.*?\s*)?(?:delivery|order|product|package)|when\s+(?:should|will)\s+(?:i\s+)?receive\s+(?:my\s+)?(?:order|product|package)|(?:is|will)\s+.*?\s*(?:arrive|be\s+delivered)|how\s+many\s+days\s+(?:for|until|till)\s+(?:delivery|my\s+order)|when\s+will\s+it\s+be\s+delivered|what(?:'s|\s+is)\s+(?:the\s+)?(?:estimated\s+|expected\s+)?delivery(?:\s+date)?|delivery\s+date|estimated\s+delivery|expected\s+delivery)\b/i.test(norm);
+};
 const isOrderCancellationRequest = (text) => /\b(cancel(?:\s+my)?\s+order|i\s+want\s+to\s+cancel|cancel\s+order)\b/i.test(text);
 
 function isFlowCancellationIntent(text) {
@@ -228,6 +232,23 @@ async function handlePaymentStatusQuestion(customer, text) {
     return true; 
   }
   return sendPaymentStatusReply(customer, result[0]);
+}
+
+async function handleDeliveryDateQuestion(customer, text) {
+  const requestedOrderId = orderIdFromText(text);
+  const result = await customerOrders(customer._id, requestedOrderId);
+  if (requestedOrderId) {
+    if (!result) { await reply(customer, "Sorry, I couldn't find that order in your account."); return true; }
+    await reply(customer, deliveryDateText(result));
+    return true;
+  }
+  if (!result.length) { await reply(customer, "I couldn't find any recent orders for you. Please check if you have an active order."); return true; }
+  if (result.length > 1) {
+    await reply(customer, `📦 You have multiple orders:\n\n${result.map((order, index) => `${index + 1}️⃣ #${order.orderId} — ${order.productName} — ${order.orderStatus}`).join("\n")}\n\nPlease reply with the order number.`);
+    return true;
+  }
+  await reply(customer, deliveryDateText(result[0]));
+  return true;
 }
 
 async function handleOrderCancellation(customer, text) {
@@ -328,6 +349,7 @@ async function handlePriorityIntent({ customer, conversation, text }) {
     return handleCatalog(customer);
   }
   if (isPaymentStatusQuestion(text)) return handlePaymentStatusQuestion(customer, text);
+  if (isDeliveryDateQuestion(text)) return handleDeliveryDateQuestion(customer, text);
   if (isTrackingRequest(text)) return handleTracking(customer, text);
   return false;
 }
@@ -625,6 +647,7 @@ app.post("/webhook", async (req, res) => {
     if (conversation?.status === "HUMAN_REQUIRED") return res.sendStatus(200);
     if (!conversation && (isOrderCancellationRequest(userMessage) || isCancel(userMessage))) { await handleOrderCancellation(customer, userMessage); return res.sendStatus(200); }
     if (!conversation && isPaymentStatusQuestion(userMessage)) { await handlePaymentStatusQuestion(customer, userMessage); return res.sendStatus(200); }
+    if (!conversation && isDeliveryDateQuestion(userMessage)) { await handleDeliveryDateQuestion(customer, userMessage); return res.sendStatus(200); }
     if (!conversation && (isTrackingRequest(userMessage) || orderIdFromText(userMessage))) { await handleTracking(customer, userMessage); return res.sendStatus(200); }
     if (conversation && await handleStep({ customer, conversation, text: userMessage })) return res.sendStatus(200);
     if (isOnlinePaymentRequest(userMessage)) { await sendCodOnlinePaymentLink(customer); return res.sendStatus(200); }

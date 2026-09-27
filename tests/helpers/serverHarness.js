@@ -60,7 +60,7 @@ function createHarness() {
       "./src/services/whatsappService": { sendWhatsAppText: async ({ text }) => { data.replies.push(text); } },
       "./src/services/geminiService": { getGeminiReply: async () => { data.geminiCalls += 1; return "gemini fallback"; } },
       "./src/services/orderService": { createOrder: async (input) => { const order = document({ _id: `order-${data.orders.length + 1}`, ...input, totalAmount: input.product.price * input.conversation.quantity }); data.orders.push(order); return order; } },
-      "./src/services/orderLifecycleService": { canCancelOrder: () => true, customerOrders: async () => data.mockCustomerOrders, trackingText: (o) => `tracking ${o.orderId}` },
+      "./src/services/orderLifecycleService": { canCancelOrder: () => true, customerOrders: async (_cid, oid) => oid ? (data.mockCustomerOrders.find((o) => o.orderId === oid.toUpperCase()) || null) : data.mockCustomerOrders, deliveryDateText: (o) => `delivery ${o.orderId}`, trackingText: (o) => `tracking ${o.orderId}` },
       "./src/services/paymentService": { createPaymentLink: async () => ({ id: "link", short_url: "https://payment.test", reference_id: "ref" }), fetchPaymentLink: async () => ({ status: "created" }), verifyWebhookSignature: () => true },
       "./src/utils/productService": productService,
       "./src/routes/adminRoutes": {},
