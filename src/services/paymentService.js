@@ -33,7 +33,7 @@ async function createPaymentLink(order) {
   const amount = Math.round(Number(order.totalAmount) * 100);
   if (!Number.isSafeInteger(amount) || amount < 1) throw new Error("Invalid payment amount.");
   const existingUrl = order.razorpayPaymentLinkUrl || order.paymentLinkUrl;
-  if (order.paymentStatus !== "PAID" && order.razorpayPaymentLinkId && existingUrl) {
+  if (!["PAID", "REFUNDED"].includes(order.paymentStatus) && order.razorpayPaymentLinkId && existingUrl) {
     return {
       id: order.razorpayPaymentLinkId,
       short_url: existingUrl,

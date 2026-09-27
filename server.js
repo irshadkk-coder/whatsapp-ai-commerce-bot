@@ -88,7 +88,7 @@ app.post("/webhook/razorpay", express.raw({ type: "application/json" }), async (
     if (!["payment.captured", "payment_link.paid"].includes(event.event) || !payment) return res.sendStatus(200);
     const amount = Number(payment.amount);
     const paidLinkEvent = event.event === "payment_link.paid" && paymentLink?.status === "paid";
-    const capturedPayment = payment.status === "captured" || event.event === "payment.captured";
+    const capturedPayment = payment.status === "captured" || event.event === "payment.captured" || (paidLinkEvent && payment.status === "authorized");
     const storedOrderIdMismatch = order?.razorpayOrderId && razorpayOrderId && order.razorpayOrderId !== razorpayOrderId;
     if (!order) {
       logWebhookMatchFailure(event.event, identifiers, matchingFields);
@@ -538,9 +538,6 @@ async function handleStep({ customer, conversation, text }) {
     if (method === "cod" && !product.cod) { await reply(customer, `Cash on Delivery is not available for ${product.name}. Please reply ONLINE to continue.`); return true; }
     if (method === "cod") {
       let existingOrder = conversation.pendingOrderId ? await Order.findById(conversation.pendingOrderId) : null;
-      if (!existingOrder) {
-        existingOrder = await Order.findOne({ customerId: customer._id, productId: product.productId, quantity: conversation.quantity, paymentMethod: "ONLINE", paymentStatus: { $in: ["PENDING", "FAILED"] }, orderStatus: "PENDING" }).sort({ updatedAt: -1 });
-      }
       if (existingOrder && String(existingOrder.customerId) === String(customer._id) && existingOrder.productId === product.productId && existingOrder.quantity === conversation.quantity) {
         if (existingOrder.paymentStatus === "PAID") { await reply(customer, `Payment for order #${existingOrder.orderId} is already confirmed. No further payment method change is needed.`); return true; }
         if (existingOrder.paymentMethod === "ONLINE" && ["PENDING", "FAILED"].includes(existingOrder.paymentStatus) && existingOrder.orderStatus === "PENDING") {
@@ -569,8 +566,9 @@ async function handleStep({ customer, conversation, text }) {
       return true;
     }
     let order = conversation.pendingOrderId ? await Order.findById(conversation.pendingOrderId) : null;
-    if (!order) {
-      order = await Order.findOne({ customerId: customer._id, productId: product.productId, quantity: conversation.quantity, paymentMethod: "ONLINE", paymentStatus: { $in: ["PENDING", "FAILED"] }, orderStatus: "PENDING" }).sort({ updatedAt: -1 });
+    // Guard: never reattach to an order that is already PAID or belongs to a different product/quantity.
+    if (order && (order.paymentStatus === "PAID" || order.productId !== product.productId || order.quantity !== conversation.quantity)) {
+      order = null;
     }
     if (!order) {
       try { order = await createOrder({ customer, conversation, product, paymentMethod: "ONLINE", paymentStatus: "PENDING", orderStatus: "PENDING" }); }
